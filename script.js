@@ -202,7 +202,15 @@ function processLJK(imgElement) {
         
         let M = cv.getPerspectiveTransform(srcTri, dstTri);
         let warped = new cv.Mat();
-        cv.warpPerspective(thresh, warped, M, new cv.Size(w, h)); // Warp the thresholded image directly
+
+        // Dilation to thicken the "X" marks before warping
+        let kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+        let threshDilated = new cv.Mat();
+        cv.dilate(thresh, threshDilated, kernel, new cv.Point(-1, -1), 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+
+        cv.warpPerspective(threshDilated, warped, M, new cv.Size(w, h));
+
+        threshDilated.delete(); kernel.delete();
         
         // Scan Grid
         let cellH = h / CONFIG.rowsPerTable;
@@ -212,6 +220,7 @@ function processLJK(imgElement) {
             let qNum = (idx * CONFIG.questionsPerTable) + row;
             let bestOpt = -1;
             let maxCount = 0;
+            let candidates = [];
             
             let rowY = Math.floor(row * cellH);
             let nextRowY = Math.floor((row+1) * cellH);
@@ -220,12 +229,14 @@ function processLJK(imgElement) {
                 let colX = Math.floor(col * cellW);
                 let nextColX = Math.floor((col+1) * cellW);
                 
-                // Define ROI with margin to avoid border lines
-                let margin = 5; 
-                let rX = colX + margin;
-                let rY = rowY + margin;
-                let rW = (nextColX - colX) - (2 * margin);
-                let rH = (nextRowY - rowY) - (2 * margin);
+                // Define ROI with aggressive margin to avoid border lines and bleed
+                let marginX = Math.floor(cellW * 0.25);
+                let marginY = Math.floor(cellH * 0.30);
+
+                let rX = colX + marginX;
+                let rY = rowY + marginY;
+                let rW = (nextColX - colX) - (2 * marginX);
+                let rH = (nextRowY - rowY) - (2 * marginY);
                 
                 if (rW <= 0 || rH <= 0) continue;
                 
@@ -235,16 +246,24 @@ function processLJK(imgElement) {
                 let count = cv.countNonZero(roi);
                 roi.delete();
                 
-                // Draw grid on visual (Approximate mapping back is hard, so skipping detailed grid draw on visual)
-                // Just log
-                if (count > maxCount) {
-                    maxCount = count;
-                    bestOpt = col - 1;
+                // Threshold for being a candidate
+                if (count > 150) {
+                    candidates.push({opt: col - 1, count: count});
                 }
             }
             
-            // Threshold for "Is Marked"
-            if (maxCount > 30) { // Tunable threshold
+            // Decision Logic
+            if (candidates.length > 0) {
+                // If multiple candidates, pick the one with max pixels
+                // This handles bleed where the ghost mark usually has fewer pixels than the real mark (hopefully)
+                // or where the real mark is centered and the ghost is cut by margins.
+                let best = candidates.reduce((prev, current) => (prev.count > current.count) ? prev : current);
+                bestOpt = best.opt;
+                maxCount = best.count;
+            }
+
+            // Final Threshold check (redundant if candidates check > 150, but kept for structure)
+            if (maxCount > 150) {
                  answers[qNum] = bestOpt;
                  
                  // Visualize found answer on the Main Image (Approximation)
