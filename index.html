@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pemeriksa LJK HP (Format 45 Soal)</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 10px; background: #f4f4f4; text-align: center; }
+        h1 { font-size: 1.2rem; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .step { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .step:last-child { border-bottom: none; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-size: 1rem; cursor: pointer; margin: 5px; }
+        button:disabled { background: #ccc; }
+        input[type=file] { margin: 10px 0; }
+        canvas { max-width: 100%; height: auto; border: 1px solid #ddd; margin-top: 10px; }
+        .status { color: #666; font-size: 0.9rem; margin: 5px 0; }
+        .score-display { font-size: 2rem; font-weight: bold; color: #28a745; margin: 10px 0; }
+        .error { color: red; font-weight: bold; }
+        .info { background: #e9ecef; padding: 10px; border-radius: 5px; font-size: 0.9rem; text-align: left; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Pemeriksa LJK Otomatis</h1>
+    <p class="status" id="status">Memuat sistem...</p>
+
+    <div class="info">
+        <strong>Petunjuk:</strong>
+        <ul>
+            <li>Gunakan LJK format 3 kolom (45 Soal).</li>
+            <li>Pastikan foto terang dan fokus.</li>
+            <li>Ambil foto tegak lurus (hindari miring ekstrim).</li>
+            <li>Seluruh tabel jawaban harus terlihat.</li>
+        </ul>
+    </div>
+
+    <!-- Step 1: Key -->
+    <div class="step">
+        <h3>1. Foto Kunci Jawaban</h3>
+        <p>Upload foto LJK yang sudah disilang jawaban benarnya.</p>
+        <input type="file" id="keyInput" accept="image/*" disabled>
+        <div id="keyStatus"></div>
+        <canvas id="keyCanvas" style="display:none;"></canvas>
+    </div>
+
+    <!-- Step 2: Student -->
+    <div class="step">
+        <h3>2. Foto Jawaban Siswa</h3>
+        <p>Upload foto LJK siswa untuk dinilai.</p>
+        <input type="file" id="studentInput" accept="image/*" disabled>
+        <div class="score-display" id="scoreDisplay"></div>
+        <canvas id="resultCanvas"></canvas>
+    </div>
+</div>
+
+<script src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();" onerror="onOpenCvError();"></script>
+<script src="script.js"></script>
+
+<script>
+    function onOpenCvReady() {
+        document.getElementById('status').innerText = "Sistem Siap! Silakan mulai.";
+        document.getElementById('keyInput').disabled = false;
+        console.log("OpenCV.js loaded");
+    }
+    function onOpenCvError() {
+        document.getElementById('status').innerHTML = "<span class='error'>Gagal memuat sistem pemrosesan gambar. Cek koneksi internet.</span>";
+    }
+</script>
+
+</body>
+</html>
