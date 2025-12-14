@@ -55,9 +55,6 @@
     </div>
 </div>
 
-<script src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();" onerror="onOpenCvError();"></script>
-<script src="script.js"></script>
-
 <script>
     function onOpenCvReady() {
         document.getElementById('status').innerText = "Sistem Siap! Silakan mulai.";
@@ -68,6 +65,8 @@
         document.getElementById('status').innerHTML = "<span class='error'>Gagal memuat sistem pemrosesan gambar. Cek koneksi internet.</span>";
     }
 </script>
+<script src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();" onerror="onOpenCvError();"></script>
+<script src="script.js"></script>
 
 </body>
 </html>
