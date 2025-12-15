@@ -10,14 +10,18 @@
         .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .step { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
         .step:last-child { border-bottom: none; }
-        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-size: 1rem; cursor: pointer; margin: 5px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-size: 1rem; cursor: pointer; margin: 5px; text-decoration: none; display: inline-block;}
+        button:hover { background: #0056b3; }
+        a.btn { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-size: 1rem; cursor: pointer; margin: 5px; text-decoration: none; display: inline-block; }
+        a.btn:hover { background: #0056b3; }
         button:disabled { background: #ccc; }
         input[type=file] { margin: 10px 0; }
         canvas { max-width: 100%; height: auto; border: 1px solid #ddd; margin-top: 10px; }
         .status { color: #666; font-size: 0.9rem; margin: 5px 0; }
         .score-display { font-size: 2rem; font-weight: bold; color: #28a745; margin: 10px 0; }
         .error { color: red; font-weight: bold; }
-        .info { background: #e9ecef; padding: 10px; border-radius: 5px; font-size: 0.9rem; text-align: left; }
+        .info { background: #e9ecef; padding: 10px; border-radius: 5px; font-size: 0.9rem; text-align: left; margin-bottom: 20px;}
+        .info ul { margin: 5px 0 0 20px; padding: 0; }
     </style>
 </head>
 <body>
@@ -26,20 +30,25 @@
     <h1>Pemeriksa LJK Otomatis</h1>
     <p class="status" id="status">Memuat sistem...</p>
 
+    <div class="step">
+        <a href="template.html" target="_blank" class="btn">🖨️ Cetak Template LJK</a>
+        <p style="font-size: 0.8rem; color: #555;">Gunakan template ini untuk hasil terbaik.</p>
+    </div>
+
     <div class="info">
-        <strong>Petunjuk:</strong>
+        <strong>Petunjuk Penggunaan:</strong>
         <ul>
-            <li>Gunakan LJK format 3 kolom (45 Soal).</li>
-            <li>Pastikan foto terang dan fokus.</li>
-            <li>Ambil foto tegak lurus (hindari miring ekstrim).</li>
-            <li>Seluruh tabel jawaban harus terlihat.</li>
+            <li>Cetak template di kertas A4.</li>
+            <li><strong>Isi jawaban dengan menghitamkan bulatan penuh</strong> (gunakan pensil 2B/spidol hitam).</li>
+            <li>Pastikan <strong>4 kotak hitam di pojok</strong> terlihat jelas saat difoto.</li>
+            <li>Ambil foto tegak lurus dan pastikan kertas rata.</li>
         </ul>
     </div>
 
     <!-- Step 1: Key -->
     <div class="step">
         <h3>1. Foto Kunci Jawaban</h3>
-        <p>Upload foto LJK yang sudah disilang jawaban benarnya.</p>
+        <p>Upload foto LJK yang sudah diisi kunci jawaban benar.</p>
         <input type="file" id="keyInput" accept="image/*" disabled>
         <div id="keyStatus"></div>
         <canvas id="keyCanvas" style="display:none;"></canvas>
