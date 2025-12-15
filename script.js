@@ -4,7 +4,7 @@ let videoStream = null;
 const NUM_QUESTIONS = 45;
 
 // Configuration for User's LJK (A4, 45 Soal)
-// Based on generate_test_image.py logic (mm coordinates)
+// Calibrated from provided template image
 const CONFIG = {
     widthMM: 210,
     heightMM: 297,
@@ -17,15 +17,15 @@ const CONFIG = {
         {x: 22.5, y: 274.5}, // BL
         {x: 187.5, y: 274.5} // BR
     ],
-    // Bubble Geometry
+    // Bubble Geometry (Calibrated)
     colStartX: 20,
-    colWidth: (210 - 40) / 3, // ~56.66
+    colWidth: 56.77, // Calibrated
     bubbleStartY: 110,
-    rowHeight: 9,
+    rowHeight: 7.28, // Calibrated
     bubbleRadiusMM: 2.5,
     bubbleGapMM: 8,
-    firstBubbleOffsetMM: 25,
-    verticalAlignOffset: 3
+    firstBubbleOffsetMM: 27.4, // Calibrated
+    verticalAlignOffset: 17.79 // Calibrated
 };
 
 // --- Digital Key Logic ---
@@ -93,6 +93,12 @@ function saveKey() {
 
 // --- Camera Logic ---
 
+let autoScanInterval = null;
+let lastAnchors = null;
+let stabilityCounter = 0;
+const STABILITY_THRESHOLD = 5; // px movement allowed
+const STABILITY_FRAMES_REQUIRED = 8; // Number of stable frames before capture
+
 async function startCamera() {
     const video = document.getElementById('videoFeed');
     const container = document.getElementById('cameraContainer');
@@ -115,12 +121,19 @@ async function startCamera() {
         btnStart.style.display = 'none';
         document.getElementById('resultArea').classList.add('hidden');
 
+        // Start Auto Scan Loop
+        startAutoScanLoop();
+
     } catch (err) {
         alert("Gagal membuka kamera: " + err.message + "\nPastikan Anda memberikan izin kamera.");
     }
 }
 
 function stopCamera() {
+    if (autoScanInterval) {
+        clearInterval(autoScanInterval);
+        autoScanInterval = null;
+    }
     if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
         videoStream = null;
@@ -132,7 +145,90 @@ function resetCamera() {
     document.getElementById('cameraContainer').style.display = 'block';
     // Restart camera if stopped (usually good to keep running or restart)
     if (!videoStream) startCamera();
+    else startAutoScanLoop();
 }
+
+function startAutoScanLoop() {
+    if (autoScanInterval) clearInterval(autoScanInterval);
+
+    const guideOverlay = document.getElementById('guideOverlay');
+    if(guideOverlay) guideOverlay.style.borderColor = "rgba(255, 255, 255, 0.5)";
+
+    // Check stability every 200ms
+    autoScanInterval = setInterval(checkAutoScan, 200);
+}
+
+function checkAutoScan() {
+    // Only check if we are in "camera mode"
+    if (document.getElementById('cameraContainer').style.display === 'none') return;
+
+    const video = document.getElementById('videoFeed');
+    if (video.videoWidth === 0) return;
+
+    // Use a small canvas for speed
+    const canvas = document.createElement('canvas');
+    let scale = 0.25; // process at 1/4 resolution
+    canvas.width = video.videoWidth * scale;
+    canvas.height = video.videoHeight * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const img = cv.imread(canvas);
+    const anchors = findAnchors(img); // Reuse logic, but separate function
+    img.delete();
+
+    const statusOverlay = document.getElementById('scanStatus');
+
+    if (!anchors || anchors.length !== 4) {
+        stabilityCounter = 0;
+        lastAnchors = null;
+        if(statusOverlay) statusOverlay.innerText = "Arahkan ke 4 kotak hitam...";
+        if(statusOverlay) statusOverlay.style.color = "white";
+
+        const guide = document.getElementById('guideOverlay');
+        if(guide) guide.style.borderColor = "rgba(255, 255, 255, 0.5)";
+        return;
+    }
+
+    // Anchors found - check stability
+    // Sort anchors to be consistent
+    anchors.sort((a, b) => a.y - b.y); // Rough sort
+
+    if (lastAnchors) {
+        let maxDist = 0;
+        for (let i = 0; i < 4; i++) {
+            let dx = anchors[i].x - lastAnchors[i].x;
+            let dy = anchors[i].y - lastAnchors[i].y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist > maxDist) maxDist = dist;
+        }
+
+        if (maxDist < STABILITY_THRESHOLD) {
+            stabilityCounter++;
+            if(statusOverlay) statusOverlay.innerText = `Tahan posisi... (${stabilityCounter}/${STABILITY_FRAMES_REQUIRED})`;
+            if(statusOverlay) statusOverlay.style.color = "yellow";
+
+            const guide = document.getElementById('guideOverlay');
+            if(guide) guide.style.borderColor = "yellow";
+
+            if (stabilityCounter >= STABILITY_FRAMES_REQUIRED) {
+                // Trigger Capture!
+                clearInterval(autoScanInterval);
+                if(statusOverlay) statusOverlay.innerText = "Processing...";
+                if(guide) guide.style.borderColor = "#00ff00";
+                captureAndProcess();
+            }
+        } else {
+            stabilityCounter = 0;
+            if(statusOverlay) statusOverlay.innerText = "Stabilkan tangan...";
+        }
+    } else {
+        stabilityCounter = 0;
+    }
+
+    lastAnchors = anchors;
+}
+
 
 function captureAndProcess() {
     const video = document.getElementById('videoFeed');
@@ -145,8 +241,6 @@ function captureAndProcess() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     // Process
-    const statusDiv = document.getElementById('keyStatus'); // Reuse or new status?
-    // Let's use a temporary loading indicator on the button?
     const btn = document.getElementById('btnCapture');
     const originalText = btn.innerText;
     btn.innerText = "Processing...";
@@ -161,6 +255,8 @@ function captureAndProcess() {
         
         if (result.error) {
             alert(result.error);
+            // Resume scanning if failed
+            startAutoScanLoop();
         } else {
             showResults(result);
         }
@@ -168,10 +264,9 @@ function captureAndProcess() {
 }
 
 function showResults(result) {
-    // Hide Camera UI
-    // document.getElementById('cameraContainer').style.display = 'none';
-    // Actually keep container but overlay results? Or hide video.
-    // Let's hide video container to save space and show result canvas.
+    // Stop auto scan
+    if (autoScanInterval) clearInterval(autoScanInterval);
+
     document.getElementById('cameraContainer').style.display = 'none';
     const resArea = document.getElementById('resultArea');
     resArea.classList.remove('hidden');
@@ -181,7 +276,6 @@ function showResults(result) {
     let total = Object.keys(keyAnswers).length;
     let wrongList = [];
 
-    // We need to re-verify against keyAnswers here because processLJK returns STUDENT answers
     const studentAns = result.answers;
     const visual = result.visual;
 
@@ -189,8 +283,6 @@ function showResults(result) {
         const correctOpt = keyAnswers[q];
         const studentOpt = studentAns[q];
         
-        // Draw feedback on the visual (warped image)
-        // Recalculate positions (Logic duplicated from processLJK - refactor if possible)
         let colIdx = Math.floor((q - 1) / 15);
         let rowIdx = (q - 1) % 15;
         let colX = CONFIG.colStartX + (colIdx * CONFIG.colWidth);
@@ -201,14 +293,11 @@ function showResults(result) {
 
         if (studentOpt === correctOpt) {
             score++;
-            // Draw O
              cv.putText(visual, "O", new cv.Point(markX - 30, markY+10), cv.FONT_HERSHEY_SIMPLEX, 0.8, new cv.Scalar(0, 200, 0, 255), 2);
         } else {
             wrongList.push(q);
-            // Draw X
             cv.putText(visual, "X", new cv.Point(markX - 30, markY+10), cv.FONT_HERSHEY_SIMPLEX, 0.8, new cv.Scalar(255, 0, 0, 255), 2);
 
-             // Highlight correct answer
              let correctCX = (colX + CONFIG.firstBubbleOffsetMM + correctOpt * CONFIG.bubbleGapMM) * 10;
              let correctCY = (rowY + CONFIG.verticalAlignOffset) * 10;
              cv.circle(visual, new cv.Point(correctCX, correctCY), 15, new cv.Scalar(0, 200, 0, 255), 2);
@@ -233,23 +322,13 @@ function showResults(result) {
 
     // Display Canvas
     cv.imshow('resultCanvas', visual);
-    visual.delete(); // Cleanup Mat
+    visual.delete();
 }
 
 
 // --- Core Logic (Refactored) ---
 
-function processLJKFromCanvas(inputCanvas) {
-    let src = cv.imread(inputCanvas);
-
-    // Resize for consistency
-    let scale = 1500 / src.cols;
-    let dsize = new cv.Size(1500, Math.round(src.rows * scale));
-    let img = new cv.Mat();
-    cv.resize(src, img, dsize, 0, 0, cv.INTER_AREA);
-    src.delete();
-
-    // 1. Find Anchors
+function findAnchors(img) {
     let gray = new cv.Mat();
     cv.cvtColor(img, gray, cv.COLOR_RGBA2GRAY);
     
@@ -270,7 +349,8 @@ function processLJKFromCanvas(inputCanvas) {
         let cnt = contours.get(i);
         let area = cv.contourArea(cnt);
         
-        if (area > imgArea * 0.001 && area < imgArea * 0.05) {
+        // Slightly relaxed constraints for detection
+        if (area > imgArea * 0.0005 && area < imgArea * 0.05) {
             let peri = cv.arcLength(cnt, true);
             let approx = new cv.Mat();
             cv.approxPolyDP(cnt, approx, 0.04 * peri, true);
@@ -278,14 +358,14 @@ function processLJKFromCanvas(inputCanvas) {
             if (approx.rows === 4) {
                 let rect = cv.boundingRect(approx);
                 let aspect = rect.width / rect.height;
-                if (aspect > 0.8 && aspect < 1.2) {
+                if (aspect > 0.7 && aspect < 1.3) {
                     let hull = new cv.Mat();
                     cv.convexHull(cnt, hull);
                     let hullArea = cv.contourArea(hull);
                     let solidity = area / hullArea;
                     hull.delete();
                     
-                    if (solidity > 0.9) {
+                    if (solidity > 0.85) {
                         let M = cv.moments(cnt, false);
                         let cx = M.m10 / M.m00;
                         let cy = M.m01 / M.m00;
@@ -297,18 +377,28 @@ function processLJKFromCanvas(inputCanvas) {
         }
     }
     
+    gray.delete(); blur.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+
+    return anchors;
+}
+
+function processLJKFromCanvas(inputCanvas) {
+    let src = cv.imread(inputCanvas);
+
+    // Resize for consistency
+    let scale = 1500 / src.cols;
+    let dsize = new cv.Size(1500, Math.round(src.rows * scale));
+    let img = new cv.Mat();
+    cv.resize(src, img, dsize, 0, 0, cv.INTER_AREA);
+    src.delete();
+
+    // 1. Find Anchors
+    let anchors = findAnchors(img);
+
     // Debug fail
-    if (anchors.length !== 4) {
-        gray.delete(); blur.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
-        let debugImg = img.clone();
-        // Draw all contours to show what was seen
-        cv.drawContours(debugImg, contours, -1, new cv.Scalar(0,0,255,255), 2);
-
-        // Show debug on result canvas temporarily?
-        cv.imshow('resultCanvas', debugImg);
-        debugImg.delete(); img.delete();
-
-        return { error: `Gagal deteksi 4 marker. Ditemukan ${anchors.length}. Coba sesuaikan cahaya/posisi.` };
+    if (!anchors || anchors.length !== 4) {
+        img.delete();
+        return { error: `Gagal deteksi 4 marker. Ditemukan ${anchors ? anchors.length : 0}. Coba sesuaikan cahaya/posisi.` };
     }
 
     // Sort Anchors
@@ -340,14 +430,14 @@ function processLJKFromCanvas(inputCanvas) {
     let warped = new cv.Mat();
     cv.warpPerspective(img, warped, M, new cv.Size(dstW, dstH));
 
-    gray.delete(); blur.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
     srcTri.delete(); dstTri.delete(); M.delete(); img.delete();
 
     // 3. Scan Bubbles
     let wGray = new cv.Mat();
     cv.cvtColor(warped, wGray, cv.COLOR_RGBA2GRAY);
     let wThresh = new cv.Mat();
-    cv.threshold(wGray, wThresh, 150, 255, cv.THRESH_BINARY_INV);
+    // Use Adaptive Threshold for better lighting resilience
+    cv.adaptiveThreshold(wGray, wThresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 3);
     
     let answers = {};
     
@@ -380,7 +470,8 @@ function processLJKFromCanvas(inputCanvas) {
             }
         }
         
-        if (maxPixels > 300) {
+        // Threshold for valid fill (calibrated guess)
+        if (maxPixels > 150) { // Lowered slightly since adaptive threshold might be cleaner
             answers[q] = bestOpt;
         }
     }
