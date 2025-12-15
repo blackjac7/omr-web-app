@@ -1,6 +1,7 @@
 // Global variables
-let keyAnswers = {}; // {1: 2, 2: 0 ...}
-let processingMode = 'key'; // 'key' or 'student'
+let keyAnswers = {}; // {1: 2, 2: 0 ...} (0=A, 1=B, 2=C, 3=D, 4=E)
+let videoStream = null;
+const NUM_QUESTIONS = 45;
 
 // Configuration for User's LJK (A4, 45 Soal)
 // Based on generate_test_image.py logic (mm coordinates)
@@ -11,9 +12,9 @@ const CONFIG = {
     anchorMarginMM: 15,
     // Model Anchor Centers (TL, TR, BL, BR)
     anchors: [
-        {x: 22.5, y: 22.5},  // TL (15 + 15/2)
-        {x: 187.5, y: 22.5}, // TR (210 - 15 - 15/2)
-        {x: 22.5, y: 274.5}, // BL (297 - 15 - 15/2)
+        {x: 22.5, y: 22.5},  // TL
+        {x: 187.5, y: 22.5}, // TR
+        {x: 22.5, y: 274.5}, // BL
         {x: 187.5, y: 274.5} // BR
     ],
     // Bubble Geometry
@@ -27,124 +28,221 @@ const CONFIG = {
     verticalAlignOffset: 3
 };
 
-// --- DOM Elements ---
-const keyInput = document.getElementById('keyInput');
-const studentInput = document.getElementById('studentInput');
-const keyStatus = document.getElementById('keyStatus');
-const resultCanvas = document.getElementById('resultCanvas');
-const scoreDisplay = document.getElementById('scoreDisplay');
-const keyCanvas = document.getElementById('keyCanvas');
+// --- Digital Key Logic ---
 
-// --- Event Listeners ---
-keyInput.addEventListener('change', (e) => handleImageUpload(e, 'key'));
-studentInput.addEventListener('change', (e) => handleImageUpload(e, 'student'));
+function initKeyGrid() {
+    const grid = document.getElementById('keyGrid');
+    grid.innerHTML = '';
 
-function handleImageUpload(e, type) {
-    const file = e.target.files[0];
-    if (!file) return;
+    // Load saved key if exists
+    const savedKey = localStorage.getItem('ljk_key_answers');
+    let savedObj = savedKey ? JSON.parse(savedKey) : {};
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-            if (type === 'key') processKey(img);
-            else processStudent(img);
-        };
-        img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
+    for (let i = 1; i <= NUM_QUESTIONS; i++) {
+        const div = document.createElement('div');
+        div.className = 'key-item';
+
+        const label = document.createElement('label');
+        label.innerText = `No ${i}`;
+
+        const select = document.createElement('select');
+        select.id = `q_${i}`;
+
+        ['A', 'B', 'C', 'D', 'E'].forEach((opt, idx) => {
+            const option = document.createElement('option');
+            option.value = idx;
+            option.innerText = opt;
+            if (savedObj[i] === idx) option.selected = true;
+            select.appendChild(option);
+        });
+
+        div.appendChild(label);
+        div.appendChild(select);
+        grid.appendChild(div);
+    }
+
+    if (savedKey) {
+        keyAnswers = savedObj;
+        document.getElementById('stepCamera').classList.remove('hidden');
+        document.getElementById('keyStatus').innerText = "Kunci jawaban dimuat dari memori.";
+        document.getElementById('keyStatus').style.color = "green";
+    }
 }
 
-// --- Image Processing Pipeline ---
+// Auto-init grid when script loads (or DOM ready)
+document.addEventListener('DOMContentLoaded', initKeyGrid);
 
-function processKey(imgElement) {
-    keyStatus.innerText = "Memproses Kunci Jawaban...";
-    keyStatus.style.color = "black";
-    processingMode = 'key';
+function saveKey() {
+    let newKey = {};
+    for (let i = 1; i <= NUM_QUESTIONS; i++) {
+        const val = document.getElementById(`q_${i}`).value;
+        newKey[i] = parseInt(val);
+    }
+    keyAnswers = newKey;
+    localStorage.setItem('ljk_key_answers', JSON.stringify(keyAnswers));
     
-    setTimeout(() => { // Allow UI to update
-        const results = processLJK(imgElement);
-        if (results.error) {
-            keyStatus.innerHTML = `<span class='error'>${results.error}</span>`;
-            return;
-        }
-        
-        keyAnswers = results.answers;
-        keyStatus.innerHTML = `<strong>Kunci Jawaban Terdeteksi:</strong> ${Object.keys(keyAnswers).length} soal. <br>Silakan upload lembar siswa.`;
-        keyStatus.style.color = "green";
-        studentInput.disabled = false;
-        
-        // Draw visualization
-        cv.imshow('keyCanvas', results.visual);
-        document.getElementById('keyCanvas').style.display = 'block';
-        results.cleanup();
-    }, 100);
+    document.getElementById('keyStatus').innerText = "Kunci Jawaban Tersimpan!";
+    document.getElementById('keyStatus').style.color = "green";
+
+    // Unlock next step
+    document.getElementById('stepCamera').classList.remove('hidden');
+    // Scroll to camera step
+    document.getElementById('stepCamera').scrollIntoView({behavior: 'smooth'});
 }
 
-function processStudent(imgElement) {
-    scoreDisplay.innerText = "Menilai...";
-    processingMode = 'student';
-    
-    setTimeout(() => {
-        const results = processLJK(imgElement);
-        if (results.error) {
-            alert(results.error);
-            scoreDisplay.innerText = "Gagal.";
-            return;
-        }
-        
-        // Grading
-        let score = 0;
-        let total = Object.keys(keyAnswers).length;
-        let studentAns = results.answers;
-        let visual = results.visual;
 
-        // Draw Feedback on Visual
-        // Since 'visual' is the warped image (flat A4), it's easy to draw exactly where we checked.
-        
-        for (let q in keyAnswers) {
-            const correctOpt = keyAnswers[q];
-            const studentOpt = studentAns[q];
+// --- Camera Logic ---
 
-            // Re-calculate position for drawing feedback
-            // (Duplicate logic from scanBubbles, ideally refactor)
-            let colIdx = Math.floor((q - 1) / 15);
-            let rowIdx = (q - 1) % 15;
-            let colX = CONFIG.colStartX + (colIdx * CONFIG.colWidth);
-            let rowY = CONFIG.bubbleStartY + (rowIdx * CONFIG.rowHeight);
+async function startCamera() {
+    const video = document.getElementById('videoFeed');
+    const container = document.getElementById('cameraContainer');
+    const btnStart = document.getElementById('btnStartCamera');
 
-            // Draw Check or Cross
-            // Position: Left of the number
-            let markX = (colX + 5) * 10; // 10px/mm scale
-            let markY = (rowY + CONFIG.verticalAlignOffset) * 10;
-
-            if (studentOpt === correctOpt) {
-                score++;
-                cv.putText(visual, "O", new cv.Point(markX - 30, markY+10), cv.FONT_HERSHEY_SIMPLEX, 0.8, new cv.Scalar(0, 200, 0, 255), 2);
-            } else {
-                cv.putText(visual, "X", new cv.Point(markX - 30, markY+10), cv.FONT_HERSHEY_SIMPLEX, 0.8, new cv.Scalar(255, 0, 0, 255), 2);
-
-                // Highlight the correct answer if missed
-                let correctCX = (colX + CONFIG.firstBubbleOffsetMM + correctOpt * CONFIG.bubbleGapMM) * 10;
-                let correctCY = (rowY + CONFIG.verticalAlignOffset) * 10;
-                cv.circle(visual, new cv.Point(correctCX, correctCY), 15, new cv.Scalar(0, 200, 0, 255), 2);
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'environment', // Back camera
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
             }
+        });
+        
+        videoStream = stream;
+        video.srcObject = stream;
+        
+        // UI Updates
+        container.style.display = 'block';
+        btnStart.style.display = 'none';
+        document.getElementById('resultArea').classList.add('hidden');
+
+    } catch (err) {
+        alert("Gagal membuka kamera: " + err.message + "\nPastikan Anda memberikan izin kamera.");
+    }
+}
+
+function stopCamera() {
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+    }
+}
+
+function resetCamera() {
+    document.getElementById('resultArea').classList.add('hidden');
+    document.getElementById('cameraContainer').style.display = 'block';
+    // Restart camera if stopped (usually good to keep running or restart)
+    if (!videoStream) startCamera();
+}
+
+function captureAndProcess() {
+    const video = document.getElementById('videoFeed');
+    const canvas = document.createElement('canvas'); // Temp canvas
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    
+    // Draw current frame
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Process
+    const statusDiv = document.getElementById('keyStatus'); // Reuse or new status?
+    // Let's use a temporary loading indicator on the button?
+    const btn = document.getElementById('btnCapture');
+    const originalText = btn.innerText;
+    btn.innerText = "Processing...";
+    btn.disabled = true;
+
+    // Small delay to allow UI render
+    setTimeout(() => {
+        const result = processLJKFromCanvas(canvas);
+        
+        btn.innerText = originalText;
+        btn.disabled = false;
+        
+        if (result.error) {
+            alert(result.error);
+        } else {
+            showResults(result);
         }
-        
-        let finalScore = total > 0 ? Math.round((score / total) * 100) : 0;
-        scoreDisplay.innerText = `Nilai: ${finalScore} (${score}/${total})`;
-        
-        cv.imshow('resultCanvas', visual);
-        results.cleanup();
     }, 100);
 }
 
-// --- Core Logic ---
+function showResults(result) {
+    // Hide Camera UI
+    // document.getElementById('cameraContainer').style.display = 'none';
+    // Actually keep container but overlay results? Or hide video.
+    // Let's hide video container to save space and show result canvas.
+    document.getElementById('cameraContainer').style.display = 'none';
+    const resArea = document.getElementById('resultArea');
+    resArea.classList.remove('hidden');
 
-function processLJK(imgElement) {
-    let src = cv.imread(imgElement);
+    // Calculate Score
+    let score = 0;
+    let total = Object.keys(keyAnswers).length;
+    let wrongList = [];
 
-    // Resize for consistency/speed (limit width to 1500px)
+    // We need to re-verify against keyAnswers here because processLJK returns STUDENT answers
+    const studentAns = result.answers;
+    const visual = result.visual;
+
+    for (let q in keyAnswers) {
+        const correctOpt = keyAnswers[q];
+        const studentOpt = studentAns[q];
+        
+        // Draw feedback on the visual (warped image)
+        // Recalculate positions (Logic duplicated from processLJK - refactor if possible)
+        let colIdx = Math.floor((q - 1) / 15);
+        let rowIdx = (q - 1) % 15;
+        let colX = CONFIG.colStartX + (colIdx * CONFIG.colWidth);
+        let rowY = CONFIG.bubbleStartY + (rowIdx * CONFIG.rowHeight);
+        
+        let markX = (colX + 5) * 10; // 10px/mm
+        let markY = (rowY + CONFIG.verticalAlignOffset) * 10;
+
+        if (studentOpt === correctOpt) {
+            score++;
+            // Draw O
+             cv.putText(visual, "O", new cv.Point(markX - 30, markY+10), cv.FONT_HERSHEY_SIMPLEX, 0.8, new cv.Scalar(0, 200, 0, 255), 2);
+        } else {
+            wrongList.push(q);
+            // Draw X
+            cv.putText(visual, "X", new cv.Point(markX - 30, markY+10), cv.FONT_HERSHEY_SIMPLEX, 0.8, new cv.Scalar(255, 0, 0, 255), 2);
+
+             // Highlight correct answer
+             let correctCX = (colX + CONFIG.firstBubbleOffsetMM + correctOpt * CONFIG.bubbleGapMM) * 10;
+             let correctCY = (rowY + CONFIG.verticalAlignOffset) * 10;
+             cv.circle(visual, new cv.Point(correctCX, correctCY), 15, new cv.Scalar(0, 200, 0, 255), 2);
+        }
+    }
+
+    let finalScore = total > 0 ? Math.round((score / total) * 100) : 0;
+
+    // Display Text
+    document.getElementById('scoreDisplay').innerText = `Nilai: ${finalScore}`;
+
+    const wrongDiv = document.getElementById('wrongAnswersDisplay');
+    if (wrongList.length === 0) {
+        wrongDiv.innerText = "Sempurna! Tidak ada yang salah.";
+        wrongDiv.style.color = "green";
+        wrongDiv.style.background = "#e6fffa";
+    } else {
+        wrongDiv.innerText = "Salah No: " + wrongList.join(', ');
+        wrongDiv.style.color = "#dc3545";
+        wrongDiv.style.background = "#fff5f5";
+    }
+
+    // Display Canvas
+    cv.imshow('resultCanvas', visual);
+    visual.delete(); // Cleanup Mat
+}
+
+
+// --- Core Logic (Refactored) ---
+
+function processLJKFromCanvas(inputCanvas) {
+    let src = cv.imread(inputCanvas);
+
+    // Resize for consistency
     let scale = 1500 / src.cols;
     let dsize = new cv.Size(1500, Math.round(src.rows * scale));
     let img = new cv.Mat();
@@ -159,9 +257,7 @@ function processLJK(imgElement) {
     cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
 
     let thresh = new cv.Mat();
-    // Binary Inv: Markers become White, Background Black
-    cv.adaptiveThreshold(blur, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-                         cv.THRESH_BINARY_INV, 11, 2);
+    cv.adaptiveThreshold(blur, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
 
     let contours = new cv.MatVector();
     let hierarchy = new cv.Mat();
@@ -174,20 +270,15 @@ function processLJK(imgElement) {
         let cnt = contours.get(i);
         let area = cv.contourArea(cnt);
         
-        // Filter by Area (Adjust based on expected size of 15x15mm in A4)
-        // 15mm/210mm ~ 7%. (15/210)^2 ~ 0.5% of area.
-        // Let's be generous: 0.1% to 5%.
         if (area > imgArea * 0.001 && area < imgArea * 0.05) {
             let peri = cv.arcLength(cnt, true);
             let approx = new cv.Mat();
             cv.approxPolyDP(cnt, approx, 0.04 * peri, true);
             
             if (approx.rows === 4) {
-                // Check Aspect Ratio ~ 1.0
                 let rect = cv.boundingRect(approx);
                 let aspect = rect.width / rect.height;
                 if (aspect > 0.8 && aspect < 1.2) {
-                    // Check solidity
                     let hull = new cv.Mat();
                     cv.convexHull(cnt, hull);
                     let hullArea = cv.contourArea(hull);
@@ -195,12 +286,10 @@ function processLJK(imgElement) {
                     hull.delete();
                     
                     if (solidity > 0.9) {
-                        // Found a square candidate
-                        // Store center point
                         let M = cv.moments(cnt, false);
                         let cx = M.m10 / M.m00;
                         let cy = M.m01 / M.m00;
-                        anchors.push({x: cx, y: cy, cnt: cnt}); // cnt for debug
+                        anchors.push({x: cx, y: cy});
                     }
                 }
             }
@@ -208,27 +297,27 @@ function processLJK(imgElement) {
         }
     }
     
+    // Debug fail
     if (anchors.length !== 4) {
         gray.delete(); blur.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
-        // Debug: Draw candidates found
         let debugImg = img.clone();
-        for(let a of anchors) {
-            cv.drawContours(debugImg, contours, -1, new cv.Scalar(0,0,255,255), 2); // Draw all
-        }
-        return { error: `Gagal deteksi 4 marker. Ditemukan ${anchors.length}. Pastikan foto memuat 4 kotak hitam di pojok.`, visual: debugImg, cleanup: () => { img.delete(); debugImg.delete(); } };
+        // Draw all contours to show what was seen
+        cv.drawContours(debugImg, contours, -1, new cv.Scalar(0,0,255,255), 2);
+
+        // Show debug on result canvas temporarily?
+        cv.imshow('resultCanvas', debugImg);
+        debugImg.delete(); img.delete();
+
+        return { error: `Gagal deteksi 4 marker. Ditemukan ${anchors.length}. Coba sesuaikan cahaya/posisi.` };
     }
 
-    // Sort Anchors: TL, TR, BL, BR
-    // Sort by Y first (Top vs Bottom)
+    // Sort Anchors
     anchors.sort((a, b) => a.y - b.y);
     let top = anchors.slice(0, 2).sort((a, b) => a.x - b.x);
     let bottom = anchors.slice(2, 4).sort((a, b) => a.x - b.x);
+    let srcPts = [top[0], top[1], bottom[0], bottom[1]];
 
-    let srcPts = [top[0], top[1], bottom[0], bottom[1]]; // TL, TR, BL, BR
-
-    // 2. Warp Perspective
-    // Target Size: 10 pixels per mm (High Res)
-    // A4: 2100 x 2970
+    // 2. Warp
     let scaleFactor = 10;
     let dstW = CONFIG.widthMM * scaleFactor;
     let dstH = CONFIG.heightMM * scaleFactor;
@@ -240,7 +329,6 @@ function processLJK(imgElement) {
         srcPts[3].x, srcPts[3].y
     ]);
 
-    // Target Anchors (Based on CONFIG)
     let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
         CONFIG.anchors[0].x * scaleFactor, CONFIG.anchors[0].y * scaleFactor,
         CONFIG.anchors[1].x * scaleFactor, CONFIG.anchors[1].y * scaleFactor,
@@ -252,29 +340,23 @@ function processLJK(imgElement) {
     let warped = new cv.Mat();
     cv.warpPerspective(img, warped, M, new cv.Size(dstW, dstH));
 
-    // Clean up early stages
     gray.delete(); blur.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
     srcTri.delete(); dstTri.delete(); M.delete(); img.delete();
 
     // 3. Scan Bubbles
-    // Process warped image (convert to gray/thresh again?)
     let wGray = new cv.Mat();
     cv.cvtColor(warped, wGray, cv.COLOR_RGBA2GRAY);
     let wThresh = new cv.Mat();
-    // Threshold to find black marks.
     cv.threshold(wGray, wThresh, 150, 255, cv.THRESH_BINARY_INV);
     
     let answers = {};
     
-    // Iterate 45 Questions
-    for (let q = 1; q <= 45; q++) {
-        let colIdx = Math.floor((q - 1) / 15); // 0, 1, 2
-        let rowIdx = (q - 1) % 15; // 0..14
-        
+    for (let q = 1; q <= NUM_QUESTIONS; q++) {
+        let colIdx = Math.floor((q - 1) / 15);
+        let rowIdx = (q - 1) % 15;
         let colX = CONFIG.colStartX + (colIdx * CONFIG.colWidth);
         let rowY = CONFIG.bubbleStartY + (rowIdx * CONFIG.rowHeight);
         
-        // Find best option for this question
         let bestOpt = -1;
         let maxPixels = 0;
         
@@ -282,8 +364,6 @@ function processLJK(imgElement) {
             let cx = colX + CONFIG.firstBubbleOffsetMM + (opt * CONFIG.bubbleGapMM);
             let cy = rowY + CONFIG.verticalAlignOffset;
             
-            // Define ROI around bubble
-            // Radius 2.5mm -> Diameter 5mm. ROI 6x6mm?
             let rMM = 3;
             let rx = Math.round((cx - rMM) * scaleFactor);
             let ry = Math.round((cy - rMM) * scaleFactor);
@@ -294,38 +374,18 @@ function processLJK(imgElement) {
             let count = cv.countNonZero(roi);
             roi.delete();
             
-            // Debug Visualization: Draw ROI on warped image
-            let color = new cv.Scalar(200, 200, 200, 255);
-            if (count > 100) color = new cv.Scalar(0, 0, 255, 255); // Candidate
-            cv.rectangle(warped, new cv.Point(rx, ry), new cv.Point(rx+rw, ry+rh), color, 1);
-
-            // Threshold logic
-            // A full circle (r=2.5mm) area ~ 20mm^2. At 10px/mm -> 2000 pixels.
-            // A check mark might be 200-500 pixels.
-            // "Hitamkan bulatan" should be > 1000 pixels.
-            // Let's use a dynamic threshold or just relative max.
-
             if (count > maxPixels) {
                 maxPixels = count;
                 bestOpt = opt;
             }
         }
         
-        // Final Decision
-        // Must have significant darkness. e.g., > 20% fill?
-        // Full circle area approx 2000 px.
-        if (maxPixels > 300) { // Tolerant threshold
+        if (maxPixels > 300) {
             answers[q] = bestOpt;
-
-            // Draw detected answer (Green circle)
-            let cx = CONFIG.colStartX + (colIdx * CONFIG.colWidth) + CONFIG.firstBubbleOffsetMM + (bestOpt * CONFIG.bubbleGapMM);
-            let cy = CONFIG.bubbleStartY + (rowIdx * CONFIG.rowHeight) + CONFIG.verticalAlignOffset;
-
-            cv.circle(warped, new cv.Point(cx*scaleFactor, cy*scaleFactor), 20, new cv.Scalar(0, 255, 0, 255), 2);
         }
     }
     
     wGray.delete(); wThresh.delete();
     
-    return { answers: answers, visual: warped, cleanup: () => { warped.delete(); } };
+    return { answers: answers, visual: warped };
 }

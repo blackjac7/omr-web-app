@@ -5,76 +5,107 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pemeriksa LJK HP (Format 45 Soal)</title>
     <style>
-        body { font-family: sans-serif; margin: 0; padding: 10px; background: #f4f4f4; text-align: center; }
-        h1 { font-size: 1.2rem; }
-        .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .step { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 10px; background: #f4f4f4; text-align: center; color: #333; }
+        h1 { font-size: 1.5rem; margin-bottom: 10px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .step { margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
         .step:last-child { border-bottom: none; }
-        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-size: 1rem; cursor: pointer; margin: 5px; text-decoration: none; display: inline-block;}
-        button:hover { background: #0056b3; }
-        a.btn { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-size: 1rem; cursor: pointer; margin: 5px; text-decoration: none; display: inline-block; }
-        a.btn:hover { background: #0056b3; }
-        button:disabled { background: #ccc; }
-        input[type=file] { margin: 10px 0; }
-        canvas { max-width: 100%; height: auto; border: 1px solid #ddd; margin-top: 10px; }
+
+        /* Button Styles */
+        button, .btn { background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; margin: 8px; text-decoration: none; display: inline-block; font-weight: 500; transition: background 0.2s; }
+        button:hover, .btn:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button.secondary { background: #6c757d; }
+        button.secondary:hover { background: #5a6268; }
+
+        /* Key Input Grid */
+        .key-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; text-align: left; max-height: 300px; overflow-y: auto; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px; background: #fafafa; }
+        .key-item { font-size: 0.8rem; padding: 5px; background: white; border: 1px solid #eee; border-radius: 4px; }
+        .key-item label { display: block; font-weight: bold; margin-bottom: 2px; }
+        .key-item select { width: 100%; padding: 4px; border-radius: 4px; border: 1px solid #ccc; }
+
+        /* Camera & Canvas */
+        #cameraContainer { position: relative; width: 100%; max-width: 100%; overflow: hidden; border-radius: 8px; background: #000; display: none; }
+        video { width: 100%; height: auto; display: block; }
+        canvas { max-width: 100%; height: auto; border-radius: 8px; margin-top: 10px; display: none; }
+
+        .overlay-btn { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; padding: 15px 40px; font-size: 1.2rem; border-radius: 30px; background: rgba(0, 123, 255, 0.9); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+
         .status { color: #666; font-size: 0.9rem; margin: 5px 0; }
-        .score-display { font-size: 2rem; font-weight: bold; color: #28a745; margin: 10px 0; }
-        .error { color: red; font-weight: bold; }
-        .info { background: #e9ecef; padding: 10px; border-radius: 5px; font-size: 0.9rem; text-align: left; margin-bottom: 20px;}
+        .score-display { font-size: 2.5rem; font-weight: 800; color: #28a745; margin: 15px 0; }
+        .wrong-answers { font-size: 1rem; color: #dc3545; background: #fff5f5; padding: 10px; border-radius: 8px; text-align: left; margin-top: 10px; }
+        .error { color: #dc3545; font-weight: bold; }
+        .info { background: #e9ecef; padding: 12px; border-radius: 8px; font-size: 0.9rem; text-align: left; margin-bottom: 20px; }
         .info ul { margin: 5px 0 0 20px; padding: 0; }
+
+        /* Utility */
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>Pemeriksa LJK Otomatis</h1>
+    <h1>Pemeriksa LJK HP</h1>
     <p class="status" id="status">Memuat sistem...</p>
 
-    <div class="step">
-        <a href="template.html" target="_blank" class="btn">🖨️ Cetak Template LJK</a>
-        <p style="font-size: 0.8rem; color: #555;">Gunakan template ini untuk hasil terbaik.</p>
+    <!-- Step 0: Template -->
+    <div class="step" id="stepTemplate">
+        <a href="template.html" target="_blank" class="btn secondary" style="font-size: 0.9rem;">🖨️ Cetak Template LJK</a>
     </div>
 
-    <div class="info">
-        <strong>Petunjuk Penggunaan:</strong>
-        <ul>
-            <li>Cetak template di kertas A4.</li>
-            <li><strong>Isi jawaban dengan menghitamkan bulatan penuh</strong> (gunakan pensil 2B/spidol hitam).</li>
-            <li>Pastikan <strong>4 kotak hitam di pojok</strong> terlihat jelas saat difoto.</li>
-            <li>Ambil foto tegak lurus dan pastikan kertas rata.</li>
-        </ul>
+    <!-- Step 1: Digital Key -->
+    <div class="step" id="stepKey">
+        <h3>1. Input Kunci Jawaban</h3>
+        <p style="font-size: 0.9rem; color: #666;">Masukkan jawaban yang benar (1-45).</p>
+
+        <div class="key-grid" id="keyGrid">
+            <!-- JS will populate this -->
+        </div>
+        <button onclick="saveKey()" id="btnSaveKey">💾 Simpan Kunci Jawaban</button>
+        <p id="keyStatus" class="status"></p>
     </div>
 
-    <!-- Step 1: Key -->
-    <div class="step">
-        <h3>1. Foto Kunci Jawaban</h3>
-        <p>Upload foto LJK yang sudah diisi kunci jawaban benar.</p>
-        <input type="file" id="keyInput" accept="image/*" disabled>
-        <div id="keyStatus"></div>
-        <canvas id="keyCanvas" style="display:none;"></canvas>
-    </div>
+    <!-- Step 2: Live Camera -->
+    <div class="step hidden" id="stepCamera">
+        <h3>2. Scan Lembar Jawaban</h3>
 
-    <!-- Step 2: Student -->
-    <div class="step">
-        <h3>2. Foto Jawaban Siswa</h3>
-        <p>Upload foto LJK siswa untuk dinilai.</p>
-        <input type="file" id="studentInput" accept="image/*" disabled>
-        <div class="score-display" id="scoreDisplay"></div>
-        <canvas id="resultCanvas"></canvas>
+        <div class="info">
+            <strong>Cara Scan:</strong>
+            <ul>
+                <li>Pastikan cahaya cukup terang.</li>
+                <li>Posisikan <strong>4 kotak hitam</strong> di dalam layar.</li>
+                <li>Tekan tombol "SCAN" saat gambar stabil.</li>
+            </ul>
+        </div>
+
+        <button onclick="startCamera()" id="btnStartCamera">📷 Buka Kamera</button>
+
+        <div id="cameraContainer">
+            <video id="videoFeed" autoplay playsinline muted></video>
+            <button class="overlay-btn" id="btnCapture" onclick="captureAndProcess()">🔘 SCAN</button>
+        </div>
+
+        <!-- Results Area -->
+        <div id="resultArea" class="hidden">
+            <div class="score-display" id="scoreDisplay"></div>
+            <div class="wrong-answers" id="wrongAnswersDisplay"></div>
+            <canvas id="resultCanvas"></canvas>
+            <br>
+            <button onclick="resetCamera()" class="secondary">🔄 Scan Lagi</button>
+        </div>
     </div>
 </div>
 
 <script>
     function onOpenCvReady() {
-        document.getElementById('status').innerText = "Sistem Siap! Silakan mulai.";
-        document.getElementById('keyInput').disabled = false;
-        console.log("OpenCV.js loaded");
+        document.getElementById('status').innerText = "Sistem Siap!";
+        console.log("OpenCV loaded");
     }
     function onOpenCvError() {
-        document.getElementById('status').innerHTML = "<span class='error'>Gagal memuat sistem pemrosesan gambar. Cek koneksi internet.</span>";
+        document.getElementById('status').innerHTML = "<span class='error'>Gagal memuat sistem (OpenCV). Cek internet.</span>";
     }
 </script>
-<script src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();" onerror="onOpenCvError();"></script>
+<script src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();" onerror="onOpenCvError();" async></script>
 <script src="script.js"></script>
 
 </body>
