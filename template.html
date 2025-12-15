@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lembar Jawaban Komputer (LJK) - 45 Soal</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 0;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            width: 210mm;
+            height: 297mm;
+            background: white;
+            font-family: Arial, sans-serif;
+            position: relative;
+            -webkit-print-color-adjust: exact;
+        }
+        /* Anchor Markers */
+        .anchor {
+            position: absolute;
+            width: 15mm;
+            height: 15mm;
+            background: black;
+            z-index: 10;
+        }
+        .tl { top: 15mm; left: 15mm; }
+        .tr { top: 15mm; right: 15mm; }
+        .bl { bottom: 15mm; left: 15mm; }
+        .br { bottom: 15mm; right: 15mm; }
+
+        /* Content Container */
+        .content {
+            position: absolute;
+            top: 40mm;
+            left: 20mm;
+            right: 20mm;
+            bottom: 40mm;
+            text-align: center;
+        }
+
+        h1 { font-size: 18pt; margin-bottom: 5mm; text-transform: uppercase; }
+
+        .header-fields {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10mm;
+            border: 1px solid #000;
+            padding: 5mm;
+            border-radius: 5px;
+        }
+        .field { text-align: left; margin-bottom: 2mm; }
+        .field label { font-weight: bold; display: inline-block; width: 80px; }
+        .field .line { display: inline-block; width: 200px; border-bottom: 1px solid black; }
+
+        .instructions {
+            font-size: 10pt;
+            margin-bottom: 10mm;
+            font-style: italic;
+            border: 1px solid #ccc;
+            padding: 5px;
+            display: inline-block;
+        }
+
+        /* Questions Grid */
+        .columns-container {
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .column {
+            width: 30%;
+        }
+
+        .q-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin-bottom: 2mm;
+            font-size: 11pt;
+        }
+        .q-num {
+            width: 25px;
+            text-align: right;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        .bubble {
+            width: 18px; /* Approx 5mm */
+            height: 18px;
+            border-radius: 50%;
+            border: 1px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 4px;
+            font-size: 9pt;
+            color: #666;
+        }
+
+        /* Guide for filling */
+        .guide-box {
+            margin-top: 10mm;
+            font-size: 9pt;
+            text-align: center;
+        }
+        .example-bubble {
+            display: inline-block;
+            width: 15px; height: 15px; border-radius: 50%; border: 1px solid black; vertical-align: middle;
+        }
+        .filled { background: black; color: white; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Anchor Markers (CRITICAL for Detection) -->
+    <div class="anchor tl"></div>
+    <div class="anchor tr"></div>
+    <div class="anchor bl"></div>
+    <div class="anchor br"></div>
+
+    <div class="content">
+        <h1>Lembar Jawaban Komputer</h1>
+
+        <div class="header-fields">
+            <div>
+                <div class="field"><label>Nama</label>: <span class="line"></span></div>
+                <div class="field"><label>Kelas</label>: <span class="line"></span></div>
+            </div>
+            <div>
+                <div class="field"><label>Mata Pelajaran</label>: <span class="line"></span></div>
+                <div class="field"><label>Tanggal</label>: <span class="line"></span></div>
+            </div>
+        </div>
+
+        <div class="instructions">
+            PETUNJUK: Hitamkan bulatan secara penuh pada jawaban yang Anda anggap benar.<br>
+            Gunakan pensil 2B atau pulpen tinta hitam.
+            <br><br>
+            Benar: <span class="example-bubble filled"></span> &nbsp;&nbsp;
+            Salah: <span class="example-bubble">X</span> <span class="example-bubble">&#10003;</span>
+        </div>
+
+        <div class="columns-container">
+            <!-- Column 1: 1-15 -->
+            <div class="column" id="col1"></div>
+            <!-- Column 2: 16-30 -->
+            <div class="column" id="col2"></div>
+            <!-- Column 3: 31-45 -->
+            <div class="column" id="col3"></div>
+        </div>
+
+        <div class="guide-box">
+            Pastikan 4 kotak hitam di pojok kertas tidak rusak, terlipat, atau tertutup saat difoto.
+        </div>
+    </div>
+
+    <script>
+        function createBubbles(start, end, containerId) {
+            const container = document.getElementById(containerId);
+            const opts = ['A', 'B', 'C', 'D', 'E'];
+
+            for (let i = start; i <= end; i++) {
+                let row = document.createElement('div');
+                row.className = 'q-row';
+
+                let num = document.createElement('div');
+                num.className = 'q-num';
+                num.innerText = i + ".";
+                row.appendChild(num);
+
+                opts.forEach(opt => {
+                    let bubble = document.createElement('div');
+                    bubble.className = 'bubble';
+                    bubble.innerText = opt;
+                    row.appendChild(bubble);
+                });
+
+                container.appendChild(row);
+            }
+        }
+
+        createBubbles(1, 15, 'col1');
+        createBubbles(16, 30, 'col2');
+        createBubbles(31, 45, 'col3');
+    </script>
+</body>
+</html>
